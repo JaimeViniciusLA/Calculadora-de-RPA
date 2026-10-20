@@ -10,7 +10,7 @@ from dateutil.relativedelta import relativedelta
 from io import BytesIO
 from zoneinfo import ZoneInfo
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from PIL import Image
@@ -50,12 +50,8 @@ st.markdown("""
         color: #64748b;
         margin-top: 4px;
     }
-    .highlight-net {
-        color: #10b981;
-    }
-    .highlight-cost {
-        color: #ef4444;
-    }
+    .highlight-net { color: #10b981; }
+    .highlight-cost { color: #ef4444; }
     .header-value-badge {
         background-color: #1e3a8a;
         color: #ffffff;
@@ -80,7 +76,6 @@ st.markdown("""
 # FUNÇÕES DE FORMATAÇÃO, DATAS E TRATAMENTO DE TEXTOS / CNPJ / CPF
 # -----------------------------------------------------------------------------
 def obter_data_atual_br():
-    """Retorna a data atual no fuso horário de Brasília (DD/MM/AAAA)"""
     try:
         return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
     except Exception:
@@ -92,27 +87,24 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def formatar_cpf(cpf_raw):
-    """Formata CPF no padrão 000.000.000-00 adicionando zeros à esquerda se necessário"""
     if not cpf_raw or not str(cpf_raw).strip():
         return ""
     numeros = re.sub(r'\D', '', str(cpf_raw))
-    if len(numeros) <= 11 and len(numeros) > 0:
+    if 0 < len(numeros) <= 11:
         numeros = numeros.zfill(11)
         return f"{numeros[:3]}.{numeros[3:6]}.{numeros[6:9]}-{numeros[9:]}"
     return cpf_raw
 
 def formatar_cnpj(cnpj_raw):
-    """Formata CNPJ no padrão 00.000.000/0000-00 adicionando zeros à esquerda se necessário"""
     if not cnpj_raw or not str(cnpj_raw).strip():
         return ""
     numeros = re.sub(r'\D', '', str(cnpj_raw))
-    if len(numeros) <= 14 and len(numeros) > 0:
+    if 0 < len(numeros) <= 14:
         numeros = numeros.zfill(14)
         return f"{numeros[:2]}.{numeros[2:5]}.{numeros[5:8]}/{numeros[8:12]}-{numeros[12:]}"
     return cnpj_raw
 
 def sanitizar_nome_arquivo(nome):
-    """Remove acentos e caracteres especiais para nomes de arquivos exportados"""
     if not nome or not nome.strip():
         return "Autonomo"
     nfkd = unicodedata.normalize('NFKD', nome)
@@ -121,7 +113,6 @@ def sanitizar_nome_arquivo(nome):
     return limpo if limpo else "Autonomo"
 
 def calcular_diferenca_meses(data_inicio, data_fim):
-    """Calcula o número aproximado de meses entre duas datas"""
     if not data_inicio or not data_fim or data_fim < data_inicio:
         return 1
     diff = relativedelta(data_fim, data_inicio)
@@ -137,10 +128,9 @@ def consultar_cnpj_api(cnpj_raw):
         return None, "O CNPJ informado deve conter exatamente 14 dígitos."
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
 
-    # 1ª Tentativa: BrasilAPI (timeout adaptativo: 2s conexao, 4s leitura)
     try:
         url_brasil = f"https://brasilapi.com.br/api/cnpj/v1/{cnpj_limpo}"
         resp = requests.get(url_brasil, headers=headers, timeout=(2, 4))
@@ -154,7 +144,6 @@ def consultar_cnpj_api(cnpj_raw):
     except Exception:
         pass
 
-    # 2ª Tentativa (Fallback): ReceitaWS
     try:
         url_receitaws = f"https://receitaws.com.br/v1/cnpj/{cnpj_limpo}"
         resp_rws = requests.get(url_receitaws, headers=headers, timeout=(2, 4))
@@ -172,7 +161,7 @@ def consultar_cnpj_api(cnpj_raw):
     return None, "Servidores da Receita temporariamente indisponíveis. Digite a Razão Social manualmente."
 
 # -----------------------------------------------------------------------------
-# TABELAS OFICIAIS ATUALIZADAS (RECEITA FEDERAL / INSS)
+# TABELAS OFICIAIS ATUALIZADAS
 # -----------------------------------------------------------------------------
 @st.cache_data
 def carregar_tabelas_oficiais():
@@ -213,8 +202,7 @@ def calcular_irrf_oficial(valor_bruto, desconto_inss, num_dependentes=0, deducao
     base_deducao_legal = valor_bruto - desconto_inss - (num_dependentes * deducao_dependente)
     base_simplificada = valor_bruto - desconto_simplificado
     
-    base_calculo = min(base_deducao_legal, base_simplificada)
-    base_calculo = max(0.0, base_calculo)
+    base_calculo = max(0.0, min(base_deducao_legal, base_simplificada))
     
     if base_calculo <= 2428.80:
         aliquota, deducao = 0.0, 0.0
@@ -227,14 +215,12 @@ def calcular_irrf_oficial(valor_bruto, desconto_inss, num_dependentes=0, deducao
     else:
         aliquota, deducao = 0.275, 908.73
 
-    imposto_bruto = (base_calculo * aliquota) - deducao
-    imposto_bruto = max(0.0, imposto_bruto)
+    imposto_bruto = max(0.0, (base_calculo * aliquota) - deducao)
 
     if valor_bruto <= 5000.00:
         imposto_final = 0.0
     elif valor_bruto <= 7350.00:
-        redutor = 978.62 - (0.133145 * valor_bruto)
-        redutor = max(0.0, redutor)
+        redutor = max(0.0, 978.62 - (0.133145 * valor_bruto))
         imposto_final = max(0.0, imposto_bruto - redutor)
     else:
         imposto_final = imposto_bruto
@@ -289,41 +275,32 @@ def calcular_bruto_a_partir_do_liquido(v_liquido_alvo, teto_inss, num_deps, aliq
     if v_liquido_alvo <= 0:
         return 0.0
 
-    low = v_liquido_alvo
-    high = v_liquido_alvo * 3.0
-    
+    low, high = v_liquido_alvo, v_liquido_alvo * 3.0
     for _ in range(50):
         mid = (low + high) / 2
         res = simular_rpa_completo(mid, teto_inss, num_deps, aliq_iss, reter_iss, calc_patronal, num_meses, base_inss_recolhida, inss_ja_descontado)
-        
         if abs(res["liquido_mensal"] - v_liquido_alvo) < 0.001:
             return round(mid, 2)
         elif res["liquido_mensal"] < v_liquido_alvo:
             low = mid
         else:
             high = mid
-            
     return round((low + high) / 2, 2)
 
 def calcular_bruto_a_partir_do_custo_total(custo_total_alvo, teto_inss, num_deps, aliq_iss, reter_iss, calc_patronal, num_meses=1, base_inss_recolhida=0.0, inss_ja_descontado=0.0):
-    """Calcula o valor bruto necessário para atingir exatamente o Custo Total limite do Projeto"""
     if custo_total_alvo <= 0:
         return 0.0
 
-    low = 0.0
-    high = custo_total_alvo
-    
+    low, high = 0.0, custo_total_alvo
     for _ in range(50):
         mid = (low + high) / 2
         res = simular_rpa_completo(mid, teto_inss, num_deps, aliq_iss, reter_iss, calc_patronal, num_meses, base_inss_recolhida, inss_ja_descontado)
-        
         if abs(res["custo_projeto_mensal"] - custo_total_alvo) < 0.001:
             return round(mid, 2)
         elif res["custo_projeto_mensal"] < custo_total_alvo:
             low = mid
         else:
             high = mid
-            
     return round((low + high) / 2, 2)
 
 # -----------------------------------------------------------------------------
@@ -345,10 +322,8 @@ def gerar_excel(dados):
         for item in dados["Detalhamento"]
     ]
     
-    df_detalhes = pd.DataFrame(detalhes_fmt)
-    
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_detalhes.to_excel(writer, sheet_name="Recibo RPA", index=False)
+        pd.DataFrame(detalhes_fmt).to_excel(writer, sheet_name="Recibo RPA", index=False)
         
         resumo_rows = [
             {"Indicador": "Enviado para aprovação em", "Valor Mensal": data_aprovacao, "Valor Total Acumulado": data_aprovacao},
@@ -371,32 +346,25 @@ def gerar_excel(dados):
             {"Indicador": "Custo Mensal para o Projeto", "Valor Mensal": formatar_moeda(dados["Custo Total Projeto Mensal"]), "Valor Total Acumulado": formatar_moeda(dados["Custo Total Projeto Total"])}
         ])
         
-        df_resumo = pd.DataFrame(resumo_rows)
-        df_resumo.to_excel(writer, sheet_name="Resumo Financeiro", index=False)
+        pd.DataFrame(resumo_rows).to_excel(writer, sheet_name="Resumo Financeiro", index=False)
         
     output.seek(0)
     return output
 
 def desenhar_faixas_decorativas(canvas, doc, logo_temp_path=None):
     canvas.saveState()
-    
     altura_faixa = 55.0
     y_faixa = letter[1] - altura_faixa
     
-    # Faixa Azul Superior (Header)
     canvas.setFillColor(colors.HexColor('#1E3A8A'))
     canvas.rect(0, y_faixa, letter[0], altura_faixa, fill=1, stroke=0)
     
     x_texto = 36.0
-    
     if logo_temp_path and os.path.exists(logo_temp_path):
         try:
             pil_img = Image.open(logo_temp_path)
             orig_w, orig_h = pil_img.size
-            
-            max_h = 42.0
-            max_w = 120.0
-            ratio = min(max_w / orig_w, max_h / orig_h)
+            ratio = min(120.0 / orig_w, 42.0 / orig_h)
             new_w, new_h = orig_w * ratio, orig_h * ratio
             
             y_img = y_faixa + ((altura_faixa - new_h) / 2)
@@ -409,7 +377,6 @@ def desenhar_faixas_decorativas(canvas, doc, logo_temp_path=None):
     canvas.setFont("Helvetica-Bold", 10)
     canvas.drawString(x_texto, y_faixa + 22, "DEMONSTRATIVO DE RECOLHIMENTO A AUTÔNOMO (RPA)")
     
-    # Faixa Azul Inferior (Footer Padrão)
     canvas.setFillColor(colors.HexColor('#1E3A8A'))
     canvas.rect(0, 0, letter[0], 25, fill=1, stroke=0)
     
@@ -454,8 +421,7 @@ def gerar_pdf(dados, imagem_bytes=None):
         <b>Dependentes (IRRF):</b> {dados['Num Dependentes']}
         """
         
-        info_p_base = Paragraph(info_html, label_style)
-        elements.append(info_p_base)
+        elements.append(Paragraph(info_html, label_style))
         elements.append(Spacer(1, 6))
 
         if dados.get("Lista Vinculos"):
@@ -465,14 +431,11 @@ def gerar_pdf(dados, imagem_bytes=None):
                 cnpj_fmt = v['cnpj'] if v['cnpj'] else "Não Informado"
                 vinculos_html += f"• <b>Empresa:</b> {emp_nome} (CNPJ: {cnpj_fmt}) | <b>Base INSS:</b> {formatar_moeda(v['base_inss'])} | <b>INSS Descontado:</b> {formatar_moeda(v['inss_descontado'])}<br/>"
             
-            info_p_vinc = Paragraph(vinculos_html, label_style)
-            elements.append(info_p_vinc)
+            elements.append(Paragraph(vinculos_html, label_style))
             elements.append(Spacer(1, 4))
             
-        periodo_p = Paragraph(f"<b>Período:</b> {dados['Periodo Texto']}", label_style)
-        elements.append(periodo_p)
+        elements.append(Paragraph(f"<b>Período:</b> {dados['Periodo Texto']}", label_style))
         elements.append(Spacer(1, 14))
-        
         elements.append(Paragraph("<b>DETALHAMENTO DOS PROVENTOS E DESCONTOS</b>", title_sec))
 
         label_total_col = f"Valor Total ({dados['Num Meses']} Meses)" if dados['Num Meses'] > 1 else "Valor Total (1 Mês)"
@@ -488,7 +451,6 @@ def gerar_pdf(dados, imagem_bytes=None):
             ])
             
         t = Table(table_data, colWidths=[160, 65, 65, 125, 125])
-        
         t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -507,7 +469,6 @@ def gerar_pdf(dados, imagem_bytes=None):
         elements.append(t)
         elements.append(Spacer(1, 16))
         
-        # DEMONSTRATIVO MENSAL
         elements.append(Paragraph("<b>DEMONSTRATIVO MENSAL</b>", title_sec))
         resumo_mensal_data = [
             ["VALOR BRUTO MENSAL", formatar_moeda(dados['Valor Bruto Mensal'])],
@@ -527,10 +488,8 @@ def gerar_pdf(dados, imagem_bytes=None):
             ('TOPPADDING', (0,0), (-1,-1), 4),
         ]))
         elements.append(t_res_mensal)
-        
         elements.append(Spacer(1, 14))
 
-        # DEMONSTRATIVO ACUMULADO
         if dados['Num Meses'] > 1:
             elements.append(Paragraph(f"<b>DEMONSTRATIVO ACUMULADO ({dados['Num Meses']} MESES)</b>", title_sec))
             resumo_total_data = [
@@ -553,14 +512,9 @@ def gerar_pdf(dados, imagem_bytes=None):
             elements.append(t_res_total)
             elements.append(Spacer(1, 14))
 
-        # CAMPO DE DATA APÓS O CÁLCULO ACUMULADO
         elements.append(Paragraph(f"<b>Enviado para aprovação em:</b> {data_aprovacao}", aprovacao_style))
         
-        def callback_pagina(canvas, document):
-            desenhar_faixas_decorativas(canvas, document, logo_temp_path=logo_temp_path)
-
-        doc.build(elements, onFirstPage=callback_pagina)
-    
+        doc.build(elements, onFirstPage=lambda c, d: desenhar_faixas_decorativas(c, d, logo_temp_path))
     finally:
         if logo_temp_path and os.path.exists(logo_temp_path):
             try:
@@ -572,7 +526,7 @@ def gerar_pdf(dados, imagem_bytes=None):
     return buffer
 
 # -----------------------------------------------------------------------------
-# INTERFACE DO USUÁRIO & GERENCIAMENTO DE ESTADO NATIVO
+# INTERFACE DO USUÁRIO & GERENCIAMENTO DE ESTADO
 # -----------------------------------------------------------------------------
 if "contratante_nome" not in st.session_state:
     st.session_state["contratante_nome"] = ""
@@ -583,9 +537,17 @@ if "lista_vinculos" not in st.session_state:
 if "temp_vinc_razao" not in st.session_state:
     st.session_state["temp_vinc_razao"] = ""
 
+# Inicialização de variáveis de estado local
+cnpj_input = ""
+cnpj_formatado = ""
+cpf_input = ""
+cpf_formatado = ""
+vinculos_cadastrados = []
+tot_base_inss_outros = 0.0
+tot_inss_descontado_outros = 0.0
+
 with st.sidebar:
     st.header("⚙ Configurações e Dados")
-    
     logo_file = st.file_uploader("Envie a Logo da Empresa (PNG, JPG)", type=["png", "jpg", "jpeg"])
     
     st.divider()
@@ -625,10 +587,6 @@ with st.sidebar:
     st.divider()
     st.subheader("Outro(s) Vínculo(s)")
     tem_outro_vinculo = st.checkbox("Possui outro(s) vínculo(s)?", value=False)
-    
-    tot_base_inss_outros = 0.0
-    tot_inss_descontado_outros = 0.0
-    vinculos_cadastrados = []
 
     if tem_outro_vinculo:
         st.caption("Cadastre abaixo um ou mais vínculos onde o autônomo já possui retenção de INSS:")
@@ -715,16 +673,8 @@ with st.sidebar:
     st.divider()
     st.subheader("Período do Pagamento")
     
-    data_inicio = st.date_input(
-        "Data Inicial do Período (Opcional)", 
-        value=None, 
-        format="DD/MM/YYYY"
-    )
-    data_fim = st.date_input(
-        "Data Final do Período (Opcional)", 
-        value=None, 
-        format="DD/MM/YYYY"
-    )
+    data_inicio = st.date_input("Data Inicial do Período (Opcional)", value=None, format="DD/MM/YYYY")
+    data_fim = st.date_input("Data Final do Período (Opcional)", value=None, format="DD/MM/YYYY")
     
     if data_inicio and data_fim and data_fim < data_inicio:
         st.warning("⚠ A Data Final deve ser posterior ou igual à Data Inicial.")
@@ -942,7 +892,7 @@ with col_exp_pdf:
     st.download_button(
         label="📄 Baixar Demonstrativo em PDF",
         data=pdf_bytes,
-        file_name=f"RPA_{nome_arquivo_prestador}_{num_meses}meses.pdf",
+        file_name=f"Demonstrativo_{nome_arquivo_prestador}_{num_meses}meses.pdf",
         mime="application/pdf",
         use_container_width=True
     )
@@ -952,7 +902,7 @@ with col_exp_excel:
     st.download_button(
         label="📊 Baixar Planilha em Excel",
         data=excel_bytes,
-        file_name=f"RPA_{nome_arquivo_prestador}_{num_meses}meses.xlsx",
+        file_name=f"Demonstrativo_{nome_arquivo_prestador}_{num_meses}meses.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
